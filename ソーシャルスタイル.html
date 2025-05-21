@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ソーシャルスタイル診断</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .buttons { margin-top: 20px; }
+  button { margin-right: 10px; }
+  .question { margin-bottom: 15px; }
+</style>
+</head>
+<body>
+
+<h1>ソーシャルスタイル診断</h1>
+
+<div id="quiz-container">
+  <!-- 質問ページがここに表示される -->
+</div>
+
+<div class="buttons">
+  <button id="prevBtn" onclick="prevPage()" disabled>戻る</button>
+  <button id="nextBtn" onclick="nextPage()">次へ</button>
+</div>
+
+<!-- 診断結果表示 -->
+<div id="result" style="display:none;">
+  <h2>診断結果</h2>
+  <canvas id="resultChart" width="400" height="400"></canvas>
+  <button onclick="restart()">もう一度やる</button>
+</div>
+
+<script>
+// 3択質問データ（質問文＋選択肢）
+const questions = [
+  {q:"思ったことはハッキリ伝えるタイプだと思う", opts:["はい","どちらともいえない","いいえ"]},
+  {q:"新しいことにチャレンジすることは好きだ", opts:["好き","どちらともいえない","好きではない"]},
+  {q:"まわりと仲良くやることは大事だと思う", opts:["そう思う","どちらともいえない","そう思わない"]},
+  {q:"気持ちよりも「理由」や「数字」を大事にするほうだ", opts:["そうだ","どちらともいえない","そうではない"]},
+  {q:"周りが動く前に、自分が先に動くことが多い", opts:["多い","どちらともいえない","少ない"]},
+  {q:"話すときは、表情やジェスチャーがけっこう多いと思う", opts:["多い","どちらともいえない","少ない"]},
+  {q:"ピリピリした雰囲気になるのはなるべく避けたい", opts:["避けたい","どちらともいえない","気にしない"]},
+  {q:"物ごとはきちんと整理して、筋道を立てて考えるほうが好きだ", opts:["好き","どちらともいえない","好きではない"]},
+  {q:"決めごとは、わりとサクッと決められるタイプだと思う", opts:["そう思う","どちらともいえない","そう思わない"]},
+  {q:"人と話すのは楽しいし、つい盛り上がってしまうことが多い", opts:["多い","どちらともいえない","少ない"]},
+  {q:"相手との関係をつくることは、大事にしている", opts:["大事にしている","どちらともいえない","あまり気にしない"]},
+  {q:"行き当たりばったりより、きちんと計画を立てて動きたいタイプだ", opts:["そうだ","どちらともいえない","そうではない"]},
+  {q:"グイグイ引っぱっていく役になることが多い", opts:["多い","どちらともいえない","少ない"]},
+  {q:"その場を明るくしたり、盛り上げ役になることがある", opts:["ある","どちらともいえない","ない"]},
+  {q:"人の話はしっかり聞くように心がけている", opts:["そうしている","どちらともいえない","していない"]},
+  {q:"どちらかというと慎重に物ごとを進めたい方だ", opts:["そう思う","どちらともいえない","そう思わない"]},
+  {q:"ゴールが決まったら、まっすぐそこに向かいたい", opts:["そうだ","どちらともいえない","そうではない"]},
+  {q:"感情（うれしい・イライラなど）はけっこう顔に出やすい", opts:["そうだ","どちらともいえない","そうではない"]},
+  {q:"その場の雰囲気や空気感にはわりと敏感な方だと思う", opts:["そう思う","どちらともいえない","そう思わない"]},
+  {q:"細かいところもきちんと見ておきたいタイプだ", opts:["そう思う","どちらともいえない","そう思わない"]}
+];
+
+// ソーシャルスタイルの分類と質問マッピング（例）
+const styleMap = {
+  driving: [1,5,9,13,17],
+  expressive: [2,6,10,14,18],
+  amiable: [3,7,11,15,19],
+  analytical: [4,8,12,16,20]
+};
+
+let answers = Array(questions.length).fill(null);
+let currentPage = 0;
+const pageSize = 1;
+
+const quizContainer = document.getElementById("quiz-container");
+const prevBtn = document.getElementById("prevBtn");
+const nextBtn = document.getElementById("nextBtn");
+const resultDiv = document.getElementById("result");
+
+function renderPage() {
+  quizContainer.innerHTML = "";
+  let start = currentPage * pageSize;
+  let end = Math.min(start + pageSize, questions.length);
+
+  for(let i=start; i<end; i++) {
+    const q = questions[i];
+    const div = document.createElement("div");
+    div.classList.add("page","active");
+    div.innerHTML = `
+      <div class="question"><strong>Q${i+1}.</strong> ${q.q}</div>
+      <form id="form${i}">
+        ${q.opts.map((opt, idx) => `
+          <label><input type="radio" name="q${i}" value="${idx}" ${answers[i]===idx ? "checked" : ""}> ${opt}</label><br>
+        `).join("")}
+      </form>
+    `;
+    quizContainer.appendChild(div);
+  }
+
+  prevBtn.disabled = currentPage === 0;
+  nextBtn.textContent = (currentPage === Math.floor((questions.length-1)/pageSize)) ? "診断する" : "次へ";
+}
+
+function saveAnswer() {
+  let start = currentPage * pageSize;
+  let end = Math.min(start + pageSize, questions.length);
+
+  for(let i=start; i<end; i++) {
+    const form = document.getElementById(`form${i}`);
+    const checked = form.querySelector("input[type=radio]:checked");
+    if(checked) {
+      answers[i] = Number(checked.value);
+    }
+  }
+}
+
+function nextPage() {
+  saveAnswer();
+
+  if(currentPage < Math.floor((questions.length-1)/pageSize)) {
+    currentPage++;
+    renderPage();
+  } else {
+    if(answers.includes(null)) {
+      alert("すべての質問に答えてください！");
+      return;
+    }
+    showResult();
+  }
+}
+
+function prevPage() {
+  saveAnswer();
+  if(currentPage > 0) {
+    currentPage--;
+    renderPage();
+  }
+}
+
+function calculateScores() {
+  const scores = { driving:0, expressive:0, amiable:0, analytical:0 };
+
+  for(const [style, qIndices] of Object.entries(styleMap)) {
+    for(const qIdx of qIndices) {
+      const answer = answers[qIdx-1];
+      if(answer === 2) scores[style] += 2;
+      else if(answer === 1) scores[style] += 1;
+    }
+  }
+  return scores;
+}
+
+function showResult() {
+  quizContainer.style.display = "none";
+  prevBtn.style.display = "none";
+  nextBtn.style.display = "none";
+  resultDiv.style.display = "block";
+
+  const scores = calculateScores();
+
+  const ctx = document.getElementById("resultChart").getContext("2d");
+  new Chart(ctx, {
+    type: "radar",
+    data: {
+      labels: ["ドライビング", "エクスプレッシブ", "アミ
